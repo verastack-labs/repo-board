@@ -22,8 +22,8 @@ export type BoardInput = {
 
 // Column widths in cells. Fixed columns never shrink: a row wider than the pane
 // would otherwise be shrunk by its own content, and the columns drift row to row.
-const REPO = 22
-const LOCAL = 12
+const REPO = 20
+const LOCAL = 10
 const GAP = 2
 const BRANCH_MAX = 18
 const BRANCH_MIN = 8

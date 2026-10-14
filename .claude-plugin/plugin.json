@@ -1,6 +1,6 @@
 {
   "name": "repo-board",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A pane of every repo you own on GitHub: uncommitted and unpushed work, commits to pull, and the pull requests that need you.",
   "author": { "name": "VeraStack Labs" },
   "types": "./types/index.d.ts",

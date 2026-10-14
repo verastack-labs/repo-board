@@ -97,7 +97,7 @@ test('notes extra clones and extra PRs', async ($, on) => {
   ]
   await start($, world)
   const ui = await mount($, 'terminal')
-  expect(await text(ui, 'verastack-labs/session-meter-repo')).toBe('session-meter+1 clone')
+  expect(await text(ui, 'verastack-labs/session-meter-repo')).toBe('session-me…+1 clone')
   expect(await text(ui, 'verastack-labs/rigseed-app-github')).toBe('#14checks failing+2 more')
   const hrefs = (await ui.findAll({ type: 'Link' })).map(link => link.props.href)
   expect(hrefs).toContain('https://github.com/verastack-labs/rigseed-app/pulls')
@@ -183,7 +183,7 @@ test('Refresh during a running local check shows the counts after the fetch', as
   expect(await text(ui, 'verastack-labs/rigseed-app-local')).toBe('↓7')
 })
 
-for (const columns of [64, 80, 120]) {
+for (const columns of [58, 64, 80, 120]) {
   test(`desktop at ${columns} columns: fixed columns never shrink and leave room for GitHub`, async ($, on) => {
     const world = stage(on)
     await start($, world)
@@ -213,4 +213,12 @@ test('desktop: no text piece leans on a leading space, and the GitHub cell stays
   const github = (await ui.findAll({ type: 'Box' })).find(box => box.props.key === 'verastack-labs/rigseed-app-github')
   expect(github?.props.columnGap).toBe(1)
   expect(github?.props.flexWrap ?? 'nowrap').toBe('nowrap')
+})
+
+test('the Branch column still shows in a pane 58 columns wide', async ($, on) => {
+  const world = stage(on)
+  await start($, world)
+  const ui = await mount($, 'desktop', 58)
+  const branch = (await ui.findAll({ type: 'Box' })).find(box => box.props.key === 'verastack-labs/rigseed-app-branch')
+  expect(branch?.props.width).toBe(8)
 })

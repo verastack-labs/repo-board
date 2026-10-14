@@ -16,6 +16,15 @@ In a terminal Claude Code session (Claude Code 2.1.295 or newer):
 
 Answer `y` to add the marketplace, then pick a scope.
 
+`/plugin` works only in a terminal session; the Claude desktop app's Code tab does not offer it. From any shell instead:
+
+```
+claude plugin marketplace add verastack-labs/repo-board
+claude plugin install repo-board@repo-board
+```
+
+Installed at the user scope, it also loads in the desktop app's sessions, starting with the next one.
+
 It needs `git` and the GitHub CLI (`gh`) signed in with `gh auth login`. Without `gh`, the pane still shows your clones' local state.
 
 ## Use
