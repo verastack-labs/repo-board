@@ -42,6 +42,8 @@ const isPaneOpen = atom({ plugin: 'repo-board', key: 'isPaneOpen' } as const, fa
 
 /** Which runs are under way, so a timer never starts one twice. */
 const running = { local: false, github: false, refresh: false }
+/** A local check asked for while one ran: it began before, say, a fetch, so it runs once more after. */
+const again = { local: false }
 
 type Dollar = Pick<EngineInterface, 'state' | 'process' | 'fs' | 'ui' | 'clock'>
 
@@ -135,8 +137,12 @@ async function gitWorks($: Dollar): Promise<boolean> {
 
 /** Runs `git status` on every listed clone, then updates the status line. */
 async function checkLocal($: Dollar, config: Config): Promise<void> {
-  if (running.local) return
+  if (running.local) {
+    again.local = true
+    return
+  }
   running.local = true
+  again.local = false
   try {
     const paths = await clonePaths($, config)
     const previous = await read($, local)
@@ -155,6 +161,7 @@ async function checkLocal($: Dollar, config: Config): Promise<void> {
   } finally {
     running.local = false
   }
+  if (again.local) await checkLocal($, config)
 }
 
 /** Every page of one owner's repos. Throws an Error with a short reason. */

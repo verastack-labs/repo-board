@@ -178,6 +178,9 @@ export type World = {
   git: 'ok' | 'missing'
   login: string
   graphqlDelayMs: number
+  statusDelayMs: number
+  fetched: Set<string>
+  statusAfterFetch: Record<string, string>
 }
 
 async function reply(world: World, argv: readonly string[], cwd: string | undefined): Promise<Reply> {
@@ -187,16 +190,22 @@ async function reply(world: World, argv: readonly string[], cwd: string | undefi
     if (world.git === 'missing') return 'reject'
     if (rest[0] === '--version') return { stdout: 'git version 2.46.0\n' }
     if (rest[0] === 'status') {
-      const status = world.status[cwd ?? '']
-      return status === 'timeout' ? 'reject' : { stdout: status ?? porcelain('main', 'origin/main') }
+      // git reads the refs as it starts, so the answer is fixed before any delay
+      const fetched = world.fetched.has(cwd ?? '') ? world.statusAfterFetch[cwd ?? ''] : undefined
+      const status = fetched ?? world.status[cwd ?? '']
+      if (status === 'timeout') return 'reject'
+      if (world.statusDelayMs > 0) await world.clock.sleep(world.statusDelayMs)
+      return { stdout: status ?? porcelain('main', 'origin/main') }
     }
     if (rest[0] === 'rev-list') return { stdout: '0\n' }
     if (rest[0] === 'fetch') {
       const fetch = world.fetch[cwd ?? ''] ?? 0
       if (fetch === 'slow') {
         await world.clock.sleep(60_000)
+        world.fetched.add(cwd ?? '')
         return {}
       }
+      if (fetch === 0) world.fetched.add(cwd ?? '')
       return { exitCode: fetch, stderr: fetch === 0 ? '' : 'fatal: could not read Username for https://github.com' }
     }
     return 'reject'
@@ -231,6 +240,9 @@ export function stage(on: On, tree: Tree = TREE): World {
     git: 'ok',
     login: 'riganb',
     graphqlDelayMs: 0,
+    statusDelayMs: 0,
+    fetched: new Set(),
+    statusAfterFetch: {},
   }
   // the engine hands paths beneath it in the platform's own form; the fake tree spells them with `/`
   on('fs.list', ($, e) => {

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { PANE_PROPS, PATHS, TREE, callsOf, gitConfig, slash, stage, start } from './helpers'
+import { PANE_PROPS, PATHS, TREE, callsOf, gitConfig, porcelain, slash, stage, start } from './helpers'
 import type { World } from './helpers'
 import { fetchText, formatAge, truncate } from './view'
 
@@ -167,4 +167,18 @@ test('a fresh start clears fetch progress left by a run that was cut off', async
   await opened($, world)
   await start($, world)
   expect(await text(await mount($, 'terminal'), 'fetched')).toBe('not fetched yet')
+})
+
+test('Refresh during a running local check shows the counts after the fetch', async ($, on) => {
+  const world = stage(on)
+  world.statusDelayMs = 5_000
+  world.statusAfterFetch[PATHS.rigseed] = porcelain('feat/flathub-manifest', 'origin/feat/flathub-manifest', 0, 7)
+  await start($, world)
+  await $.command.run(slash('repos'))
+  await world.clock.settle()
+  await world.clock.advance(5_000)
+  await world.clock.advance(5_000)
+  await world.clock.advance(5_000)
+  const ui = await mount($, 'terminal')
+  expect(await text(ui, 'verastack-labs/rigseed-app-local')).toBe('↓7')
 })
