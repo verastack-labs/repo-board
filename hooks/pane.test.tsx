@@ -159,3 +159,12 @@ test('formatAge, fetchText and truncate', () => {
   expect(truncate('mehfil-internal', 18)).toBe('mehfil-internal')
   expect(truncate('a-very-long-repository-name', 10)).toBe('a-very-lo…')
 })
+
+test('a fresh start clears fetch progress left by a run that was cut off', async ($, on) => {
+  const world = stage(on)
+  await start($, world)
+  for (const path of Object.values(PATHS)) world.fetch[path] = 'slow'
+  await opened($, world)
+  await start($, world)
+  expect(await text(await mount($, 'terminal'), 'fetched')).toBe('not fetched yet')
+})

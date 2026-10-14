@@ -260,6 +260,8 @@ async function showStatus($: Dollar, config: Config): Promise<void> {
 
 async function startup($: Dollar, config: Config): Promise<void> {
   try {
+    // state outlives a reload, so a fetch cut off by one would otherwise show forever
+    await update($, fetching, () => null)
     await ensureLogin($)
     await scan($, config)
     await checkLocal($, config)
