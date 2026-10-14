@@ -1,0 +1,35 @@
+{
+  "name": "repo-board",
+  "version": "0.1.0",
+  "description": "A pane of every repo you own on GitHub: uncommitted and unpushed work, commits to pull, and the pull requests that need you.",
+  "author": { "name": "VeraStack Labs" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "owners": {
+      "type": "string",
+      "multiple": true,
+      "title": "Owners",
+      "description": "GitHub organisations or users whose repos get a row",
+      "default": ["verastack-labs"]
+    },
+    "includeMyAccount": {
+      "type": "boolean",
+      "title": "Include my account",
+      "description": "Also list the repos of the account gh is signed in as",
+      "default": true
+    },
+    "roots": {
+      "type": "string",
+      "multiple": true,
+      "title": "Root folders",
+      "description": "Folders searched for clones; ~ is your home folder",
+      "default": ["~/Documents"]
+    },
+    "scanDepth": {
+      "type": "number",
+      "title": "Scan depth",
+      "description": "How many folder levels below each root are searched for clones",
+      "default": 3
+    }
+  }
+}
