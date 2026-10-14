@@ -20,6 +20,7 @@ import { mapLimit } from './pool'
 import { buildGroups } from './rows'
 import type { Group } from './rows'
 import { statusText } from './status'
+import { boardView } from './view'
 
 const PANE_ID = 'repo-board'
 const PANE_MS = 30_000
@@ -322,5 +323,27 @@ export const register: Register = (on, options) => {
   on('ui.close', async ($, e, next) => {
     if (e.id === PANE_ID) await update($, isPaneOpen, () => false)
     return next(e)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: 'repo-board' }, async ($, e) => {
+    const els = $.ui.resolve(e)
+    const known = await read($, github)
+    return boardView(
+      { Box: els.Box, Text: els.Text, Link: els.Link, Button: els.Button },
+      {
+        groups: await groupsNow($, config),
+        login: await read($, login),
+        now: await read($, checkedAt),
+        columns: e.props.bodyColumns,
+        fetching: await read($, fetching),
+        fetchedAt: await read($, fetchedAt),
+        githubError: await read($, githubError),
+        hasGithub: Object.keys(known).length > 0,
+        isGitMissing: await read($, isGitMissing),
+        onRefresh: () => {
+          void safeRefresh($, config)
+        },
+      },
+    )
   })
 }
