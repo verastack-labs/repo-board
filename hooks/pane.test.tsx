@@ -50,12 +50,12 @@ for (const surface of SURFACES) {
     expect(await text(ui, 'verastack-labs/rigseed-app-repo')).toBe('rigseed-app')
     expect(await text(ui, 'verastack-labs/rigseed-app-branch')).toBe('feat/flathub-manifest')
     expect(await text(ui, 'verastack-labs/rigseed-app-local')).toBe('↓3')
-    expect(await text(ui, 'verastack-labs/rigseed-app-github')).toBe('#14 checks failing')
+    expect(await text(ui, 'verastack-labs/rigseed-app-github')).toBe('#14checks failing')
     expect(await text(ui, 'verastack-labs/session-meter-local')).toBe('↑1')
     expect(await text(ui, 'verastack-labs/riggit-internal-local')).toBe('clean')
     expect(await text(ui, 'verastack-labs/oinkbuns-local')).toBe('not cloned')
     expect(await text(ui, 'verastack-labs/oinkbuns-branch')).toBe('')
-    expect(await text(ui, 'verastack-labs/oinkbuns-github')).toBe('#2 new')
+    expect(await text(ui, 'verastack-labs/oinkbuns-github')).toBe('#2new')
     expect(await text(ui, 'riganb/dotfiles-local')).toBe('2 changed')
     expect(await text(ui, 'fetched')).toBe('not fetched yet')
   })
@@ -97,8 +97,8 @@ test('notes extra clones and extra PRs', async ($, on) => {
   ]
   await start($, world)
   const ui = await mount($, 'terminal')
-  expect(await text(ui, 'verastack-labs/session-meter-repo')).toBe('session-meter +1 clone')
-  expect(await text(ui, 'verastack-labs/rigseed-app-github')).toBe('#14 checks failing +2 more')
+  expect(await text(ui, 'verastack-labs/session-meter-repo')).toBe('session-meter+1 clone')
+  expect(await text(ui, 'verastack-labs/rigseed-app-github')).toBe('#14checks failing+2 more')
   const hrefs = (await ui.findAll({ type: 'Link' })).map(link => link.props.href)
   expect(hrefs).toContain('https://github.com/verastack-labs/rigseed-app/pulls')
 })
@@ -181,4 +181,36 @@ test('Refresh during a running local check shows the counts after the fetch', as
   await world.clock.advance(5_000)
   const ui = await mount($, 'terminal')
   expect(await text(ui, 'verastack-labs/rigseed-app-local')).toBe('↓7')
+})
+
+for (const columns of [64, 80, 120]) {
+  test(`desktop at ${columns} columns: fixed columns never shrink and leave room for GitHub`, async ($, on) => {
+    const world = stage(on)
+    await start($, world)
+    const ui = await mount($, 'desktop', columns)
+    const boxes = await ui.findAll({ type: 'Box' })
+    const cells = boxes.filter(box => /-(repo|branch|local)$/.test(String(box.props.key)))
+    expect(cells.length).toBeGreaterThan(0)
+    expect(cells.every(box => box.props.flexShrink === 0)).toBe(true)
+    const widths = ['repo', 'branch', 'local'].map(
+      column => Number(boxes.find(box => box.props.key === `verastack-labs/rigseed-app-${column}`)?.props.width ?? 0),
+    )
+    expect(widths[1]).toBeGreaterThan(0)
+    expect(widths.reduce((a, b) => a + b, 0) + 3 * 2 + 14).toBeLessThanOrEqual(columns)
+  })
+}
+
+test('desktop: no text piece leans on a leading space, and the GitHub cell stays on one line', async ($, on) => {
+  const world = stage(on, { ...TREE, 'C:/home/Documents/aaa/session-meter/.git/config': gitConfig('https://github.com/verastack-labs/session-meter.git') })
+  world.pages['verastack-labs'] = [
+    { name: 'rigseed-app', pullCount: 3, pulls: [{ number: 14, author: 'riganb', checks: 'FAILURE' }] },
+    { name: 'session-meter' },
+  ]
+  await start($, world)
+  const ui = await mount($, 'desktop')
+  const texts = await ui.findAll({ type: 'Text' })
+  expect(texts.filter(t => /^\s+\S/.test(t.text)).map(t => t.text)).toEqual([])
+  const github = (await ui.findAll({ type: 'Box' })).find(box => box.props.key === 'verastack-labs/rigseed-app-github')
+  expect(github?.props.columnGap).toBe(1)
+  expect(github?.props.flexWrap ?? 'nowrap').toBe('nowrap')
 })

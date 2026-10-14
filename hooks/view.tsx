@@ -20,12 +20,20 @@ export type BoardInput = {
   onRefresh: () => void
 }
 
-// Column widths in cells; fixed-width Boxes line up in the desktop's proportional font too.
+// Column widths in cells. Fixed columns never shrink: a row wider than the pane
+// would otherwise be shrunk by its own content, and the columns drift row to row.
 const REPO = 22
-const BRANCH = 16
-const LOCAL = 14
+const LOCAL = 12
 const GAP = 2
-const NARROW = 50
+const BRANCH_MAX = 18
+const BRANCH_MIN = 8
+const GITHUB_MIN = 14
+
+/** The Branch column's width for a pane `columns` wide: what is left beside the others, or 0 to drop it. */
+export function branchWidth(columns: number): number {
+  const room = Math.min(BRANCH_MAX, columns - REPO - LOCAL - GITHUB_MIN - 3 * GAP)
+  return room >= BRANCH_MIN ? room : 0
+}
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
@@ -78,10 +86,11 @@ function branchText(row: Row): { text: string; note: string } {
 function repoCell(els: Els, row: Row) {
   const { Box, Text, Link } = els
   const extra = row.paths.length - 1
-  const note = extra > 0 ? ` +${extra} clone${extra > 1 ? 's' : ''}` : ''
+  // pieces are spaced by columnGap, never by a leading space, which the desktop drops
+  const note = extra > 0 ? `+${extra} clone${extra > 1 ? 's' : ''}` : ''
   return (
-    <Box key={`${row.key}-repo`} flexDirection="row" width={REPO}>
-      <Link href={row.url} label={truncate(row.name, REPO - note.length)} />
+    <Box key={`${row.key}-repo`} flexDirection="row" columnGap={1} width={REPO} flexShrink={0}>
+      <Link href={row.url} label={truncate(row.name, note === '' ? REPO : REPO - note.length - 1)} />
       {note !== '' && <Text dimColor>{note}</Text>}
     </Box>
   )
@@ -91,20 +100,19 @@ function githubCell(els: Els, row: Row, input: BoardInput) {
   const { Box, Text, Link } = els
   const top = topPull(row.pulls, input.login, input.now)
   return (
-    <Box key={`${row.key}-github`} flexDirection="row" flexGrow={1}>
+    <Box key={`${row.key}-github`} flexDirection="row" columnGap={1} flexWrap="nowrap" flexGrow={1} flexShrink={1} minWidth={0}>
       {top !== null && <Link href={top.pull.url} label={`#${top.pull.number}`} />}
       {top !== null && (
-        <Text color={MARKER_COLOUR[top.marker]} dimColor={top.marker === 'new'}>
-          {` ${MARKER_TEXT[top.marker]}`}
+        <Text color={MARKER_COLOUR[top.marker]} dimColor={top.marker === 'new'} wrap="truncate-end">
+          {MARKER_TEXT[top.marker]}
         </Text>
       )}
-      {top !== null && row.pullCount > 1 && <Text> </Text>}
       {top !== null && row.pullCount > 1 && <Link href={`${row.url}/pulls`} label={`+${row.pullCount - 1} more`} />}
     </Box>
   )
 }
 
-function rowView(els: Els, row: Row, input: BoardInput, hasBranch: boolean, hasGithub: boolean) {
+function rowView(els: Els, row: Row, input: BoardInput, branchCells: number, hasGithub: boolean) {
   const { Box, Text } = els
   const branch = branchText(row)
   const local = localText(row)
@@ -112,39 +120,41 @@ function rowView(els: Els, row: Row, input: BoardInput, hasBranch: boolean, hasG
   return (
     <Box key={row.key} flexDirection="row" columnGap={GAP}>
       {repoCell(els, row)}
-      {hasBranch && (
-        <Box key={`${row.key}-branch`} width={BRANCH}>
+      {branchCells > 0 && (
+        <Box key={`${row.key}-branch`} width={branchCells} flexShrink={0}>
           <Text wrap="truncate-end">
             {branch.text}
             {branch.note !== '' && <Text dimColor>{branch.note}</Text>}
           </Text>
         </Box>
       )}
-      <Box key={`${row.key}-local`} width={LOCAL}>
-        <Text dimColor={isDim}>{local}</Text>
+      <Box key={`${row.key}-local`} width={LOCAL} flexShrink={0}>
+        <Text dimColor={isDim} wrap="truncate-end">
+          {local}
+        </Text>
       </Box>
       {hasGithub && githubCell(els, row, input)}
     </Box>
   )
 }
 
-function columnsRow(els: Els, owner: string, hasBranch: boolean, hasGithub: boolean) {
+function columnsRow(els: Els, owner: string, branchCells: number, hasGithub: boolean) {
   const { Box, Text } = els
   return (
     <Box key={`columns-${owner}`} flexDirection="row" columnGap={GAP}>
-      <Box width={REPO}>
+      <Box width={REPO} flexShrink={0}>
         <Text dimColor>Repo</Text>
       </Box>
-      {hasBranch && (
-        <Box width={BRANCH}>
+      {branchCells > 0 && (
+        <Box width={branchCells} flexShrink={0}>
           <Text dimColor>Branch</Text>
         </Box>
       )}
-      <Box width={LOCAL}>
+      <Box width={LOCAL} flexShrink={0}>
         <Text dimColor>Local</Text>
       </Box>
       {hasGithub && (
-        <Box flexGrow={1}>
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
           <Text dimColor>GitHub</Text>
         </Box>
       )}
@@ -155,7 +165,7 @@ function columnsRow(els: Els, owner: string, hasBranch: boolean, hasGithub: bool
 /** The pane, per the spec's layout and its planning amendments. */
 export function boardView(els: Els, input: BoardInput): RenderElement {
   const { Box, Text, Button } = els
-  const hasBranch = input.columns >= NARROW
+  const branchCells = branchWidth(input.columns)
   const hasGithub = input.hasGithub
   return (
     <Box flexDirection="column">
@@ -187,8 +197,8 @@ export function boardView(els: Els, input: BoardInput): RenderElement {
           <Box key={`group-${group.owner}`}>
             <Text bold>{group.owner}</Text>
           </Box>
-          {columnsRow(els, group.owner, hasBranch, hasGithub)}
-          {group.rows.map(row => rowView(els, row, input, hasBranch, hasGithub))}
+          {columnsRow(els, group.owner, branchCells, hasGithub)}
+          {group.rows.map(row => rowView(els, row, input, branchCells, hasGithub))}
         </Box>
       ))}
     </Box>
