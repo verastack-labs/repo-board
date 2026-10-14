@@ -1,3 +1,7 @@
+import type { On, ProcessRunResult } from 'claude-code'
+import { mock } from 'claude-code/testing'
+import type { Engine, MockClock } from 'claude-code/testing'
+
 /** The fixed time every test runs at: 12:00 UTC on 14 October 2026. */
 export const NOW = Date.parse('2026-10-14T12:00:00Z')
 export const HOUR = 3_600_000
@@ -145,3 +149,153 @@ export const ORG_REPOS: FakeRepo[] = [
 
 /** The signed-in account's repos. */
 export const MY_REPOS: FakeRepo[] = [{ name: 'dotfiles' }]
+
+/** The standard `git status` of each clone: riggit clean, rigseed 3 behind, session-meter 1 ahead, dotfiles 2 changed. */
+export const STATUS: Readonly<Record<string, string>> = {
+  [PATHS.riggit]: porcelain('main', 'origin/main'),
+  [PATHS.rigseed]: porcelain('feat/flathub-manifest', 'origin/feat/flathub-manifest', 0, 3),
+  [PATHS.meter]: porcelain('main', 'origin/main', 1, 0),
+  [PATHS.dotfiles]: porcelain('main', 'origin/main', 0, 0, 2),
+}
+
+type Reply = Partial<ProcessRunResult> | 'reject'
+
+function slashes(path: string): string {
+  return path.replace(/\\/g, '/')
+}
+
+/** The world beneath the mod, changeable between checks. */
+export type World = {
+  statuses: (string | undefined)[]
+  toasts: string[]
+  calls: { argv: string; cwd: string | undefined; env: Record<string, string> | undefined }[]
+  listed: string[]
+  clock: MockClock
+  pages: Record<string, FakeRepo[] | 'auth'>
+  status: Record<string, string | 'timeout'>
+  fetch: Record<string, number | 'slow'>
+  gh: 'ok' | 'missing'
+  git: 'ok' | 'missing'
+  login: string
+  graphqlDelayMs: number
+}
+
+async function reply(world: World, argv: readonly string[], cwd: string | undefined): Promise<Reply> {
+  const [command, ...rest] = argv
+  if (command === 'cmd') return { stdout: 'C:\\home\r\n' }
+  if (command === 'git') {
+    if (world.git === 'missing') return 'reject'
+    if (rest[0] === '--version') return { stdout: 'git version 2.46.0\n' }
+    if (rest[0] === 'status') {
+      const status = world.status[cwd ?? '']
+      return status === 'timeout' ? 'reject' : { stdout: status ?? porcelain('main', 'origin/main') }
+    }
+    if (rest[0] === 'rev-list') return { stdout: '0\n' }
+    if (rest[0] === 'fetch') {
+      const fetch = world.fetch[cwd ?? ''] ?? 0
+      if (fetch === 'slow') {
+        await world.clock.sleep(60_000)
+        return {}
+      }
+      return { exitCode: fetch, stderr: fetch === 0 ? '' : 'fatal: could not read Username for https://github.com' }
+    }
+    return 'reject'
+  }
+  if (command === 'gh') {
+    if (world.gh === 'missing') return 'reject'
+    if (rest[1] === 'user') return { stdout: `${world.login}\n` }
+    const owner = rest.find(arg => arg.startsWith('owner='))?.slice('owner='.length) ?? ''
+    if (world.graphqlDelayMs > 0) await world.clock.sleep(world.graphqlDelayMs)
+    const page = world.pages[owner]
+    if (page === undefined) {
+      return { exitCode: 1, stdout: JSON.stringify({ errors: [{ message: `Could not resolve to a RepositoryOwner with the login of '${owner}'.` }] }) }
+    }
+    if (page === 'auth') return { exitCode: 4, stderr: 'To get started with GitHub CLI, please run:  gh auth login\n' }
+    return { stdout: ghPage(owner, page) }
+  }
+  return 'reject'
+}
+
+/** Stands in for everything beneath the mod. Call it before the test's first `$` call. */
+export function stage(on: On, tree: Tree = TREE): World {
+  const world: World = {
+    statuses: [],
+    toasts: [],
+    calls: [],
+    listed: [],
+    clock: mock.clock(on, { now: NOW }),
+    pages: { 'verastack-labs': ORG_REPOS, riganb: MY_REPOS },
+    status: { ...STATUS },
+    fetch: {},
+    gh: 'ok',
+    git: 'ok',
+    login: 'riganb',
+    graphqlDelayMs: 0,
+  }
+  // the engine hands paths beneath it in the platform's own form; the fake tree spells them with `/`
+  on('fs.list', ($, e) => {
+    const path = slashes(e.path)
+    world.listed.push(path)
+    const entries = listTree(tree, path)
+    if (entries === undefined) return { deny: `ENOENT: ${path}` }
+    return { value: entries.map(entry => ({ ...entry, size: 0, mtimeMs: 0, isLink: false })) }
+  })
+  on('fs.read', ($, e) => {
+    const path = slashes(e.path)
+    const text = tree[path]
+    return text === undefined ? { deny: `ENOENT: ${path}` } : { value: text }
+  })
+  on('process.run', async ($, e) => {
+    const cwd = e.init?.cwd === undefined ? undefined : slashes(e.init.cwd)
+    world.calls.push({ argv: e.argv.join(' '), cwd, env: e.init?.env })
+    const answer = await reply(world, e.argv, cwd)
+    if (answer === 'reject') return { deny: 'cannot start' }
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false, ...answer } }
+  })
+  on('ui.status', ($, e) => {
+    world.statuses.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.toast', ($, e) => {
+    world.toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  return world
+}
+
+/** Starts a session and lets the startup scan and checks finish. */
+export async function start($: Engine, world: World): Promise<void> {
+  await $.session.start({ cwd: '.', surface: 'terminal', isInteractive: true } as never)
+  await world.clock.settle()
+}
+
+/** The arguments `$.command.run` needs for a slash command typed at the prompt. */
+export function slash(command: string) {
+  return {
+    command,
+    args: '',
+    origin: { kind: 'composer' } as const,
+    presentation: { isFullscreen: false, columns: 80 },
+  }
+}
+
+/** Props for mounting the pane, 80 columns wide unless overridden. */
+export function PANE_PROPS(bodyColumns = 80) {
+  return {
+    title: 'Repos',
+    isFocused: false,
+    bodyColumns,
+    placement: 'dock' as const,
+    scroll: { offset: 0, bodyRows: 40 },
+    view: {},
+  } as never
+}
+
+/** The git or gh calls made so far whose argv starts with `prefix`. */
+export function callsOf(world: World, prefix: string) {
+  return world.calls.filter(call => call.argv.startsWith(prefix))
+}
