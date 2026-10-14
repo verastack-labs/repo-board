@@ -74,9 +74,10 @@ async function readLogin($: Dollar): Promise<string | null> {
   }
 }
 
-async function ensureLogin($: Dollar, config: Config): Promise<string | null> {
+/** The login is read even when the account's own repos are left out: it is what makes a PR "mine". */
+async function ensureLogin($: Dollar): Promise<string | null> {
   const known = await read($, login)
-  if (known !== null || !config.includeMyAccount) return known
+  if (known !== null) return known
   const found = await readLogin($)
   if (found !== null) await update($, login, () => found)
   return found
@@ -184,7 +185,7 @@ async function checkGithub($: Dollar, config: Config): Promise<void> {
   if (running.github) return
   running.github = true
   try {
-    const me = await ensureLogin($, config)
+    const me = await ensureLogin($)
     const owners = ownersFor(config, me)
     const previous = await read($, github)
     const next = { ...previous }
@@ -222,7 +223,7 @@ export async function refreshAll($: Dollar, config: Config): Promise<void> {
   if (running.refresh) return
   running.refresh = true
   try {
-    await ensureLogin($, config)
+    await ensureLogin($)
     await scan($, config)
     const paths = await clonePaths($, config)
     await update($, fetching, () => ({ done: 0, total: paths.length }))
@@ -259,7 +260,7 @@ async function showStatus($: Dollar, config: Config): Promise<void> {
 
 async function startup($: Dollar, config: Config): Promise<void> {
   try {
-    await ensureLogin($, config)
+    await ensureLogin($)
     await scan($, config)
     await checkLocal($, config)
     await checkGithub($, config)

@@ -34,10 +34,21 @@ test('a deeper scan depth reaches the deep clone', { options: { scanDepth: 4 } }
 test('without my account, only the configured owners are read', { options: { includeMyAccount: false } }, async ($, on) => {
   const world = stage(on)
   await start($, world)
-  expect(callsOf(world, 'gh api user')).toHaveLength(0)
   expect(callsOf(world, 'gh api graphql')).toHaveLength(1)
   expect(callsOf(world, 'git status').some(call => call.cwd === PATHS.dotfiles)).toBe(false)
   expect(world.statuses.at(-1)).toBe('1 failing · 1 unpushed')
+})
+
+test('without my account in the list, my own PRs are still known as mine', { options: { includeMyAccount: false } }, async ($, on) => {
+  const world = stage(on)
+  await start($, world)
+  world.pages['verastack-labs'] = [
+    ...ORG_REPOS.filter(repo => repo.name !== 'rigseed-app' && repo.name !== 'session-meter'),
+    { name: 'rigseed-app', pulls: [{ number: 14, author: 'riganb', checks: 'FAILURE', review: 'APPROVED' }] },
+    { name: 'session-meter', pulls: [{ number: 6, author: 'riganb' }] },
+  ]
+  await world.clock.advance(FIVE_MINUTES)
+  expect(world.toasts).toEqual(['rigseed-app #14: approved'])
 })
 
 test('the 5-minute check toasts failing checks, a review on my PR and a new PR', async ($, on) => {
