@@ -7,7 +7,7 @@ export const LOGIN_ARGS = ['gh', 'api', 'user', '--jq', '.login'] as const
 /** One page of an owner's unarchived repos, each with its first 20 open PRs and their review and check state. */
 export const QUERY = `query($owner: String!, $after: String) {
   repositoryOwner(login: $owner) {
-    repositories(first: 100, after: $after, isArchived: false, orderBy: { field: NAME, direction: ASC }) {
+    repositories(first: 100, after: $after, isArchived: false, ownerAffiliations: [OWNER], orderBy: { field: NAME, direction: ASC }) {
       pageInfo { hasNextPage endCursor }
       nodes {
         name url isArchived owner { login }
@@ -121,5 +121,25 @@ export function describeGhFailure(stderr: string): string {
     .split(/\r?\n/)
     .map(part => part.trim())
     .find(part => part !== '')
-  return line === undefined ? 'gh failed' : line.slice(0, 80)
+  return line === undefined ? 'gh failed' : shorten(line)
+}
+
+/** A message cut to `max` characters, ending in an ellipsis when cut. */
+export function shorten(text: string, max = 80): string {
+  const line = text.trim()
+  return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`
+}
+
+/**
+ * The one line the pane shows for the owners that failed: the shared reason when
+ * every owner failed alike, else each owner with its reason, unless the reason names it.
+ */
+export function failureLine(failures: readonly { owner: string; message: string }[], ownerCount: number): string | null {
+  if (failures.length === 0) return null
+  const messages = [...new Set(failures.map(failure => failure.message))]
+  const [only] = messages
+  if (failures.length === ownerCount && messages.length === 1 && only !== undefined) return only
+  return failures
+    .map(({ owner, message }) => (message.toLowerCase().includes(owner.toLowerCase()) ? message : `${owner}: ${message}`))
+    .join('; ')
 }

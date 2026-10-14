@@ -9,6 +9,8 @@ export type LocalState = {
   behind: number
   changed: number
   isStale: boolean
+  /** git answered with an error, such as its refusal of a folder it does not trust. */
+  hasError?: boolean
 }
 
 export type Checks = 'failing' | 'pending' | 'passing' | 'none'

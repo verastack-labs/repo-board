@@ -99,3 +99,11 @@ describe('findClones', () => {
     expect(Object.keys(clones)).toEqual(['verastack-labs/session-meter'])
   })
 })
+
+test('one folder spelled in two cases across roots is one clone', async () => {
+  // a file system that ignores case, as Windows does
+  const base = treeIo(Object.fromEntries(Object.entries(TREE).map(([path, text]) => [path.toLowerCase(), text])))
+  const io = { list: (path: string) => base.list(path.toLowerCase()), read: (path: string) => base.read(path.toLowerCase()) }
+  const clones = await findClones([DOCS, 'C:/HOME/Documents/GITHUB'], 3, io)
+  expect(clones['verastack-labs/riggit-internal']?.paths).toHaveLength(1)
+})

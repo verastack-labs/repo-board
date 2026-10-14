@@ -25,7 +25,8 @@ export function dueToasts(previous: OwnerState | undefined, next: OwnerState, lo
       const isMine = me !== null && pull.author.toLowerCase() === me
       const label = `${repo.name} #${pull.number}`
       if (old === undefined && !isMine) {
-        toasts.push(`${label}: new PR from ${pull.author}`)
+        // an older PR can come back into view past the first 20 when a newer one closes
+        if (Date.parse(pull.createdAt) > previous.checkedAt) toasts.push(`${label}: new PR from ${pull.author}`)
         continue
       }
       if (pull.checks === 'failing' && old?.checks !== 'failing') toasts.push(`${label}: checks failing`)

@@ -69,7 +69,8 @@ export async function findClones(roots: readonly string[], depth: number, io: Io
     const key = repoKey(repo.owner, repo.name)
     const found = clones[key]
     if (found === undefined) clones[key] = { owner: repo.owner, name: repo.name, paths: [dir] }
-    else if (!found.paths.includes(dir)) found.paths.push(dir)
+    // Windows paths ignore case, so one folder reached through two spellings is one clone
+    else if (!found.paths.some(path => path.toLowerCase() === dir.toLowerCase())) found.paths.push(dir)
   }
   const visit = async (dir: string, level: number): Promise<void> => {
     let entries: readonly { name: string; kind: string }[]

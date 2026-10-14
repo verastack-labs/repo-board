@@ -222,3 +222,40 @@ test('the Branch column still shows in a pane 58 columns wide', async ($, on) =>
   const branch = (await ui.findAll({ type: 'Box' })).find(box => box.props.key === 'verastack-labs/rigseed-app-branch')
   expect(branch?.props.width).toBe(8)
 })
+
+test('names the owner that could not be read, shortly, while the others show', { options: { owners: ['verastack-labs', 'nope'] } }, async ($, on) => {
+  const world = stage(on)
+  await start($, world)
+  const ui = await mount($, 'terminal')
+  expect(await text(ui, 'github-error')).toBe('Not updated: no GitHub account named nope')
+  expect(await text(ui, 'verastack-labs/rigseed-app-github')).toBe('#14checks failing')
+})
+
+test('a long GitHub error is cut short in the pane', async ($, on) => {
+  const world = stage(on)
+  world.pages['verastack-labs'] = 'ratelimit'
+  await start($, world)
+  const ui = await mount($, 'terminal')
+  const line = (await text(ui, 'github-error')) ?? ''
+  expect(line.startsWith('Not updated: verastack-labs: API rate limit exceeded')).toBe(true)
+  expect(line.endsWith('…')).toBe(true)
+  expect(line.length).toBeLessThanOrEqual('Not updated: verastack-labs: '.length + 80)
+})
+
+test('with git missing, only the repo and GitHub columns show', async ($, on) => {
+  const world = stage(on)
+  world.git = 'missing'
+  await start($, world)
+  const ui = await mount($, 'terminal')
+  const keys = (await ui.findAll({ type: 'Box' })).map(box => String(box.props.key))
+  expect(keys.some(key => key.endsWith('-local') || key.endsWith('-branch'))).toBe(false)
+  expect(keys).toContain('verastack-labs/rigseed-app-github')
+})
+
+test('a repo git refuses to read says git error instead of going blank', async ($, on) => {
+  const world = stage(on)
+  world.status[PATHS.rigseed] = 'dubious'
+  await start($, world)
+  const ui = await mount($, 'terminal')
+  expect(await text(ui, 'verastack-labs/rigseed-app-local')).toBe('git error')
+})

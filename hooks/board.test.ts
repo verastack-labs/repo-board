@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DOCS, ORG_REPOS, PATHS, callsOf, slash, stage, start } from './helpers'
+import { DOCS, NOW, ORG_REPOS, PATHS, callsOf, slash, stage, start } from './helpers'
 
 const FIVE_MINUTES = 300_000
 const CLONES = [PATHS.meter, PATHS.rigseed, PATHS.dotfiles, PATHS.riggit].sort()
@@ -58,7 +58,7 @@ test('the 5-minute check toasts failing checks, a review on my PR and a new PR',
     { name: 'oinkbuns', pulls: [{ number: 2, author: 'dependabot', checks: 'FAILURE' }] },
     { name: 'riggit-internal' },
     { name: 'rigseed-app', pulls: [{ number: 14, author: 'riganb', checks: 'FAILURE', review: 'APPROVED' }] },
-    { name: 'session-meter', pulls: [{ number: 5, author: 'dependabot', checks: 'PENDING' }] },
+    { name: 'session-meter', pulls: [{ number: 5, author: 'dependabot', checks: 'PENDING', createdAt: NOW + 60_000 }] },
   ]
   await world.clock.advance(FIVE_MINUTES)
   expect(world.toasts).toEqual(['oinkbuns #2: checks failing', 'rigseed-app #14: approved', 'session-meter #5: new PR from dependabot'])
@@ -72,7 +72,7 @@ test('more than 3 updates collapse into one toast', async ($, on) => {
   await start($, world)
   world.pages['verastack-labs'] = [
     ...ORG_REPOS.filter(repo => repo.name !== 'session-meter'),
-    { name: 'session-meter', pulls: [1, 2, 3, 4].map(number => ({ number, author: 'dependabot' })) },
+    { name: 'session-meter', pulls: [1, 2, 3, 4].map(number => ({ number, author: 'dependabot', createdAt: NOW + 60_000 })) },
   ]
   await world.clock.advance(FIVE_MINUTES)
   expect(world.toasts).toEqual(['4 GitHub updates, open /repos'])
@@ -85,7 +85,7 @@ test('a failed query keeps the last state and toasts nothing; the next compares 
   await world.clock.advance(FIVE_MINUTES)
   expect(world.toasts).toEqual([])
   expect(world.statuses.at(-1)).toBe('1 failing · 1 unpushed · 1 dirty')
-  world.pages['verastack-labs'] = [...ORG_REPOS.filter(repo => repo.name !== 'session-meter'), { name: 'session-meter', pulls: [{ number: 5, author: 'bot' }] }]
+  world.pages['verastack-labs'] = [...ORG_REPOS.filter(repo => repo.name !== 'session-meter'), { name: 'session-meter', pulls: [{ number: 5, author: 'bot', createdAt: NOW + 60_000 }] }]
   await world.clock.advance(FIVE_MINUTES)
   expect(world.toasts).toEqual(['session-meter #5: new PR from bot'])
 })
@@ -160,4 +160,41 @@ test('git runs without optional locks, fetch skips auto gc, and nothing can prom
   const fetches = callsOf(world, 'git fetch')
   expect(fetches.length).toBeGreaterThan(0)
   expect(fetches.every(call => call.argv === 'git fetch --quiet --no-auto-gc' && quiet(call))).toBe(true)
+})
+
+test('a rate-limited owner keeps its last state; the next good check compares with it', async ($, on) => {
+  const world = stage(on)
+  await start($, world)
+  world.pages['verastack-labs'] = 'ratelimit'
+  await world.clock.advance(FIVE_MINUTES)
+  expect(world.toasts).toEqual([])
+  expect(world.statuses.at(-1)).toBe('1 failing · 1 unpushed · 1 dirty')
+  world.pages['verastack-labs'] = [...ORG_REPOS.filter(repo => repo.name !== 'session-meter'), { name: 'session-meter', pulls: [{ number: 5, author: 'bot', createdAt: NOW + FIVE_MINUTES + 1_000 }] }]
+  await world.clock.advance(FIVE_MINUTES)
+  expect(world.toasts).toEqual(['session-meter #5: new PR from bot'])
+})
+
+test('an owner listed twice is queried once', { options: { owners: ['verastack-labs', 'Verastack-Labs'] } }, async ($, on) => {
+  const world = stage(on)
+  await start($, world)
+  expect(callsOf(world, 'gh api graphql').filter(call => /owner=verastack-labs/i.test(call.argv))).toHaveLength(1)
+})
+
+test('/repos says so when the pane cannot open, and tries again next time', async ($, on) => {
+  const world = stage(on)
+  world.uiOpen = 'deny'
+  await start($, world)
+  expect((await $.command.run(slash('repos'))).text).toBe('Could not open the pane.')
+  world.uiOpen = 'ok'
+  expect((await $.command.run(slash('repos'))).text).toBe('Pane opened.')
+})
+
+test('a fresh start trusts the engine about whether the pane is open', async ($, on) => {
+  const world = stage(on)
+  await start($, world)
+  expect((await $.command.run(slash('repos'))).text).toBe('Pane opened.')
+  await world.clock.settle()
+  world.panes = []
+  await start($, world)
+  expect((await $.command.run(slash('repos'))).text).toBe('Pane opened.')
 })

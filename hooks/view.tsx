@@ -68,6 +68,7 @@ function localText(row: Row): string {
   if (row.paths.length === 0) return 'not cloned'
   const local = row.local
   if (local === null) return ''
+  if (local.hasError === true) return 'git error'
   const parts: string[] = []
   if (local.ahead > 0) parts.push(`↑${local.ahead}`)
   if (row.isFetchFailed) parts.push('↓?')
@@ -78,7 +79,7 @@ function localText(row: Row): string {
 
 function branchText(row: Row): { text: string; note: string } {
   const local = row.local
-  if (row.paths.length === 0 || local === null) return { text: '', note: '' }
+  if (row.paths.length === 0 || local === null || local.hasError === true) return { text: '', note: '' }
   if (local.branch === null) return { text: 'detached', note: '' }
   return { text: local.branch, note: local.upstream === null ? ' no upstream' : '' }
 }
@@ -112,11 +113,11 @@ function githubCell(els: Els, row: Row, input: BoardInput) {
   )
 }
 
-function rowView(els: Els, row: Row, input: BoardInput, branchCells: number, hasGithub: boolean) {
+function rowView(els: Els, row: Row, input: BoardInput, branchCells: number, hasLocal: boolean, hasGithub: boolean) {
   const { Box, Text } = els
   const branch = branchText(row)
   const local = localText(row)
-  const isDim = local === 'clean' || local === 'not cloned' || row.local?.isStale === true
+  const isDim = local === 'clean' || local === 'not cloned' || local === 'git error' || row.local?.isStale === true
   return (
     <Box key={row.key} flexDirection="row" columnGap={GAP}>
       {repoCell(els, row)}
@@ -128,17 +129,19 @@ function rowView(els: Els, row: Row, input: BoardInput, branchCells: number, has
           </Text>
         </Box>
       )}
-      <Box key={`${row.key}-local`} width={LOCAL} flexShrink={0}>
-        <Text dimColor={isDim} wrap="truncate-end">
-          {local}
-        </Text>
-      </Box>
+      {hasLocal && (
+        <Box key={`${row.key}-local`} width={LOCAL} flexShrink={0}>
+          <Text dimColor={isDim} wrap="truncate-end">
+            {local}
+          </Text>
+        </Box>
+      )}
       {hasGithub && githubCell(els, row, input)}
     </Box>
   )
 }
 
-function columnsRow(els: Els, owner: string, branchCells: number, hasGithub: boolean) {
+function columnsRow(els: Els, owner: string, branchCells: number, hasLocal: boolean, hasGithub: boolean) {
   const { Box, Text } = els
   return (
     <Box key={`columns-${owner}`} flexDirection="row" columnGap={GAP}>
@@ -150,9 +153,11 @@ function columnsRow(els: Els, owner: string, branchCells: number, hasGithub: boo
           <Text dimColor>Branch</Text>
         </Box>
       )}
-      <Box width={LOCAL} flexShrink={0}>
-        <Text dimColor>Local</Text>
-      </Box>
+      {hasLocal && (
+        <Box width={LOCAL} flexShrink={0}>
+          <Text dimColor>Local</Text>
+        </Box>
+      )}
       {hasGithub && (
         <Box flexGrow={1} flexShrink={1} minWidth={0}>
           <Text dimColor>GitHub</Text>
@@ -165,7 +170,9 @@ function columnsRow(els: Els, owner: string, branchCells: number, hasGithub: boo
 /** The pane, per the spec's layout and its planning amendments. */
 export function boardView(els: Els, input: BoardInput): RenderElement {
   const { Box, Text, Button } = els
-  const branchCells = branchWidth(input.columns)
+  // with git missing there is no local state to show, only the repos and GitHub
+  const hasLocal = !input.isGitMissing
+  const branchCells = hasLocal ? branchWidth(input.columns) : 0
   const hasGithub = input.hasGithub
   return (
     <Box flexDirection="column">
@@ -184,7 +191,7 @@ export function boardView(els: Els, input: BoardInput): RenderElement {
       )}
       {input.githubError !== null && (
         <Box key="github-error">
-          <Text dimColor>GitHub unavailable: {input.githubError}</Text>
+          <Text dimColor>{`${hasGithub ? 'Not updated' : 'GitHub unavailable'}: ${input.githubError}`}</Text>
         </Box>
       )}
       {input.groups.length === 0 && (
@@ -197,8 +204,8 @@ export function boardView(els: Els, input: BoardInput): RenderElement {
           <Box key={`group-${group.owner}`}>
             <Text bold>{group.owner}</Text>
           </Box>
-          {columnsRow(els, group.owner, branchCells, hasGithub)}
-          {group.rows.map(row => rowView(els, row, input, branchCells, hasGithub))}
+          {columnsRow(els, group.owner, branchCells, hasLocal, hasGithub)}
+          {group.rows.map(row => rowView(els, row, input, branchCells, hasLocal, hasGithub))}
         </Box>
       ))}
     </Box>

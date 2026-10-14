@@ -6,7 +6,7 @@ import { collapse, dueToasts } from './changes'
 import { readConfig, ownersFor } from './config'
 import type { Config } from './config'
 import { expandRoot, findClones } from './discover'
-import { GH_TIMEOUT_MS, LOGIN_ARGS, MAX_PAGES, describeGhFailure, ghArgs, parsePage } from './github'
+import { GH_TIMEOUT_MS, LOGIN_ARGS, MAX_PAGES, describeGhFailure, failureLine, ghArgs, parsePage, shorten } from './github'
 import {
   FETCH_ARGS,
   FETCH_TIMEOUT_MS,
@@ -26,6 +26,8 @@ const PANE_ID = 'repo-board'
 const PANE_MS = 30_000
 const CHECK_MS = 300_000
 const WORKERS = 4
+/** A clone's state before git has said anything about it. */
+const NO_STATUS: LocalState = { branch: null, upstream: null, ahead: 0, behind: 0, changed: 0, isStale: false }
 
 const home = atom({ plugin: 'repo-board', key: 'home' } as const, null as string | null)
 const login = atom({ plugin: 'repo-board', key: 'login' } as const, null as string | null)
@@ -113,7 +115,7 @@ async function checkOne($: Dollar, path: string, previous: LocalState | undefine
   const stale = previous === undefined ? null : { ...previous, isStale: true }
   try {
     const result = await $.process.run(['git', ...STATUS_ARGS], { cwd: path, timeoutMs: STATUS_TIMEOUT_MS, env: QUIET_ENV })
-    if (result.exitCode !== 0) return { state: stale, isRejected: false }
+    if (result.exitCode !== 0) return { state: { ...(previous ?? NO_STATUS), isStale: false, hasError: true }, isRejected: false }
     const status = parseStatus(result.stdout)
     let ahead = status.ahead
     if (status.upstream === null && status.branch !== null) {
@@ -197,17 +199,18 @@ async function checkGithub($: Dollar, config: Config): Promise<void> {
     const previous = await read($, github)
     const next = { ...previous }
     const toasts: string[] = []
-    let error: string | null = null
+    const failures: { owner: string; message: string }[] = []
     for (const owner of owners) {
       try {
         const state = await queryOwner($, owner, await $.clock.now())
         toasts.push(...dueToasts(previous[owner.toLowerCase()], state, me))
         next[owner.toLowerCase()] = state
       } catch (failure) {
-        error = failure instanceof Error ? failure.message : String(failure)
+        failures.push({ owner, message: shorten(failure instanceof Error ? failure.message : String(failure)) })
       }
     }
     await update($, github, () => next)
+    const error = failureLine(failures, owners.length)
     await update($, githubError, () => error)
     for (const toast of collapse(toasts)) $.ui.toast(toast)
     await showStatus($, config)
@@ -269,6 +272,9 @@ async function startup($: Dollar, config: Config): Promise<void> {
   try {
     // state outlives a reload, so a fetch cut off by one would otherwise show forever
     await update($, fetching, () => null)
+    // so does whether the pane is open; the engine's own record settles it
+    const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE_ID)
+    await update($, isPaneOpen, () => isOpen)
     await ensureLogin($)
     await scan($, config)
     await checkLocal($, config)
@@ -320,18 +326,30 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'repos' }, async $ => {
     if (await read($, isPaneOpen)) {
-      await $.ui.close({ id: PANE_ID })
+      try {
+        await $.ui.close({ id: PANE_ID })
+      } catch {
+        // already gone: the board still counts it closed
+      }
       await update($, isPaneOpen, () => false)
       return { text: 'Pane closed.' }
     }
-    await $.ui.open({ id: PANE_ID, title: 'Repos' })
+    try {
+      await $.ui.open({ id: PANE_ID, title: 'Repos' })
+    } catch {
+      return { text: 'Could not open the pane.' }
+    }
     await update($, isPaneOpen, () => true)
     void safeRefresh($, config)
     return { text: 'Pane opened.' }
   })
 
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE_ID) await update($, isPaneOpen, () => false)
+    try {
+      if (e.id === PANE_ID) await update($, isPaneOpen, () => false)
+    } catch {
+      // the board never disturbs the session
+    }
     return next(e)
   })
 

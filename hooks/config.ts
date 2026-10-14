@@ -23,8 +23,13 @@ export function readConfig(options: PluginOptions): Config {
 
 /** The owners to list: the configured ones, then the signed-in account when included and not already there. */
 export function ownersFor(config: Config, login: string | null): string[] {
-  const owners = [...config.owners]
-  const isListed = login !== null && owners.some(owner => owner.toLowerCase() === login.toLowerCase())
-  if (config.includeMyAccount && login !== null && !isListed) owners.push(login)
-  return owners
+  const candidates = config.includeMyAccount && login !== null ? [...config.owners, login] : config.owners
+  const seen = new Set<string>()
+  // GitHub names ignore case, so an owner listed twice is queried and toasted once
+  return candidates.filter(owner => {
+    const lower = owner.toLowerCase()
+    if (seen.has(lower)) return false
+    seen.add(lower)
+    return true
+  })
 }

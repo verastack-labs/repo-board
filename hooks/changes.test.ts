@@ -77,3 +77,9 @@ describe('collapse', () => {
     expect(collapse([])).toEqual([])
   })
 })
+
+test('an older PR that comes back into view is not news', () => {
+  const before = { ...owner({ r: [] }), checkedAt: Date.parse('2026-10-14T12:00:00Z') }
+  const after = owner({ r: [pull(3, 'dependabot', { createdAt: '2026-10-01T09:00:00.000Z' })] })
+  expect(dueToasts(before, after, 'me')).toEqual([])
+})

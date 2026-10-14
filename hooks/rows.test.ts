@@ -151,3 +151,7 @@ describe('statusText', () => {
     expect(statusText(buildGroups({ owners: ['o'], github: { o: owner('o', { a: [] }) }, clones: {}, local: {}, fetchFailed: [] }))).toBeUndefined()
   })
 })
+
+test('ownersFor drops an owner listed twice in any case', () => {
+  expect(ownersFor(readConfig({ owners: ['verastack-labs', 'Verastack-Labs', 'riganb'] }), 'RigAnB')).toEqual(['verastack-labs', 'riganb'])
+})

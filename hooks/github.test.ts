@@ -88,3 +88,7 @@ describe('describeGhFailure', () => {
     expect(describeGhFailure('')).toBe('gh failed')
   })
 })
+
+test('the query asks only for repos the owner owns', () => {
+  expect(QUERY).toContain('ownerAffiliations: [OWNER]')
+})

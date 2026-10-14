@@ -160,6 +160,10 @@ export const STATUS: Readonly<Record<string, string>> = {
 
 type Reply = Partial<ProcessRunResult> | 'reject'
 
+/** GitHub's rate-limit message, long enough that the pane must shorten it. */
+export const RATE_LIMIT_MESSAGE =
+  'API rate limit exceeded for user ID 86922553. If you reach out to GitHub Support for help, please include the request ID 1234:5678.'
+
 function slashes(path: string): string {
   return path.replace(/\\/g, '/')
 }
@@ -171,8 +175,8 @@ export type World = {
   calls: { argv: string; cwd: string | undefined; env: Record<string, string> | undefined }[]
   listed: string[]
   clock: MockClock
-  pages: Record<string, FakeRepo[] | 'auth'>
-  status: Record<string, string | 'timeout'>
+  pages: Record<string, FakeRepo[] | 'auth' | 'ratelimit'>
+  status: Record<string, string | 'timeout' | 'dubious'>
   fetch: Record<string, number | 'slow'>
   gh: 'ok' | 'missing'
   git: 'ok' | 'missing'
@@ -181,6 +185,8 @@ export type World = {
   statusDelayMs: number
   fetched: Set<string>
   statusAfterFetch: Record<string, string>
+  uiOpen: 'ok' | 'deny'
+  panes: string[]
 }
 
 async function reply(world: World, argv: readonly string[], cwd: string | undefined): Promise<Reply> {
@@ -194,6 +200,7 @@ async function reply(world: World, argv: readonly string[], cwd: string | undefi
       const fetched = world.fetched.has(cwd ?? '') ? world.statusAfterFetch[cwd ?? ''] : undefined
       const status = fetched ?? world.status[cwd ?? '']
       if (status === 'timeout') return 'reject'
+      if (status === 'dubious') return { exitCode: 128, stderr: `fatal: detected dubious ownership in repository at '${cwd ?? ''}'\n` }
       if (world.statusDelayMs > 0) await world.clock.sleep(world.statusDelayMs)
       return { stdout: status ?? porcelain('main', 'origin/main') }
     }
@@ -216,8 +223,14 @@ async function reply(world: World, argv: readonly string[], cwd: string | undefi
     const owner = rest.find(arg => arg.startsWith('owner='))?.slice('owner='.length) ?? ''
     if (world.graphqlDelayMs > 0) await world.clock.sleep(world.graphqlDelayMs)
     const page = world.pages[owner]
-    if (page === undefined) {
-      return { exitCode: 1, stdout: JSON.stringify({ errors: [{ message: `Could not resolve to a RepositoryOwner with the login of '${owner}'.` }] }) }
+    // an unknown owner is no error to GitHub: the owner is simply null
+    if (page === undefined) return { stdout: JSON.stringify({ data: { repositoryOwner: null } }) }
+    if (page === 'ratelimit') {
+      return {
+        exitCode: 1,
+        stdout: JSON.stringify({ errors: [{ type: 'RATE_LIMITED', message: RATE_LIMIT_MESSAGE }] }),
+        stderr: 'gh: API rate limit exceeded\n',
+      }
     }
     if (page === 'auth') return { exitCode: 4, stderr: 'To get started with GitHub CLI, please run:  gh auth login\n' }
     return { stdout: ghPage(owner, page) }
@@ -243,6 +256,8 @@ export function stage(on: On, tree: Tree = TREE): World {
     statusDelayMs: 0,
     fetched: new Set(),
     statusAfterFetch: {},
+    uiOpen: 'ok',
+    panes: [],
   }
   // the engine hands paths beneath it in the platform's own form; the fake tree spells them with `/`
   on('fs.list', ($, e) => {
@@ -273,8 +288,16 @@ export function stage(on: On, tree: Tree = TREE): World {
     return { value: undefined }
   })
   on('command.register', ($, e) => ({ value: { command: e.name } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('ui.close', () => ({ value: undefined }))
+  on('ui.open', ($, e) => {
+    if (world.uiOpen === 'deny') return { deny: 'another plugin refused the pane' }
+    world.panes.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', ($, e) => {
+    world.panes = world.panes.filter(id => id !== e.id)
+    return { value: undefined }
+  })
+  on('ui.panes', () => ({ value: world.panes.map(id => ({ id, title: 'Repos', isShown: true, isFocused: false, isPlaced: true })) as never }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   return world
 }

@@ -41,7 +41,7 @@ In `/config`:
 
 - **Owners**: the GitHub organisations or users whose repos get rows. Default `verastack-labs`.
 - **Include my account**: also list the repos of the account `gh` is signed in as. Default on.
-- **Root folders**: where clones are searched for. Default `~/Documents`.
+- **Root folders**: where clones are searched for. Default `~/Documents`. On Windows with OneDrive backup on, Documents usually lives at `~/OneDrive/Documents` instead, so add that if the board finds nothing.
 - **Scan depth**: how many folder levels below each root are searched. Default 3.
 
 ## Limits
