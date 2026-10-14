@@ -79,3 +79,69 @@ export function porcelain(head: string, upstream: string | null, ahead = 0, behi
   for (let i = 0; i < changed; i += 1) lines.push(`1 .M N... 100644 100644 100644 aaaa bbbb file${i}.ts`)
   return `${lines.join('\n')}\n`
 }
+
+/** A pull request for `ghPage`. `checks` undefined means no commit; null means a commit with no checks. */
+export type FakePull = {
+  number: number
+  author: string
+  checks?: 'SUCCESS' | 'FAILURE' | 'ERROR' | 'PENDING' | 'EXPECTED' | null
+  review?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
+  createdAt?: number
+  isDraft?: boolean
+  title?: string
+}
+
+/** A repo for `ghPage`; `owner` defaults to the queried owner. */
+export type FakeRepo = { name: string; owner?: string; isArchived?: boolean; pulls?: FakePull[]; pullCount?: number }
+
+/** One page of the GraphQL answer, as `gh api graphql` prints it. */
+export function ghPage(owner: string, repos: readonly FakeRepo[], after: string | null = null): string {
+  return JSON.stringify({
+    data: {
+      repositoryOwner: {
+        repositories: {
+          pageInfo: { hasNextPage: after !== null, endCursor: after },
+          nodes: repos.map(repo => {
+            const login = repo.owner ?? owner
+            const pulls = repo.pulls ?? []
+            return {
+              name: repo.name,
+              url: `https://github.com/${login}/${repo.name}`,
+              isArchived: repo.isArchived ?? false,
+              owner: { login },
+              pullRequests: {
+                totalCount: repo.pullCount ?? pulls.length,
+                nodes: pulls.map(pull => ({
+                  number: pull.number,
+                  title: pull.title ?? `Change ${pull.number}`,
+                  url: `https://github.com/${login}/${repo.name}/pull/${pull.number}`,
+                  isDraft: pull.isDraft ?? false,
+                  createdAt: new Date(pull.createdAt ?? NOW - 72 * HOUR).toISOString(),
+                  reviewDecision: pull.review ?? null,
+                  author: { login: pull.author },
+                  commits: {
+                    nodes:
+                      pull.checks === undefined
+                        ? []
+                        : [{ commit: { statusCheckRollup: pull.checks === null ? null : { state: pull.checks } } }],
+                  },
+                })),
+              },
+            }
+          }),
+        },
+      },
+    },
+  })
+}
+
+/** The org's repos: a dependabot PR an hour old, and the user's own PR with failing checks. */
+export const ORG_REPOS: FakeRepo[] = [
+  { name: 'oinkbuns', pulls: [{ number: 2, author: 'dependabot', checks: 'SUCCESS', createdAt: NOW - HOUR }] },
+  { name: 'riggit-internal' },
+  { name: 'rigseed-app', pulls: [{ number: 14, author: 'riganb', checks: 'FAILURE' }] },
+  { name: 'session-meter' },
+]
+
+/** The signed-in account's repos. */
+export const MY_REPOS: FakeRepo[] = [{ name: 'dotfiles' }]
