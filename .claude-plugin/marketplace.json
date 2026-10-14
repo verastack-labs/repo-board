@@ -1,0 +1,6 @@
+{
+  "name": "repo-board",
+  "description": "repo-board, a Claude Code mod that shows every repo you own and what needs you",
+  "owner": { "name": "VeraStack Labs" },
+  "plugins": [{ "name": "repo-board", "source": "./" }]
+}
