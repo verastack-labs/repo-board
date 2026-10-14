@@ -71,3 +71,11 @@ export function treeIo(tree: Tree) {
     },
   }
 }
+
+/** `git status --porcelain=v2 --branch` output: a head, an optional upstream with its counts, and changed files. */
+export function porcelain(head: string, upstream: string | null, ahead = 0, behind = 0, changed = 0): string {
+  const lines = ['# branch.oid 4ebac7ec1ca5b6e187f63fa467e8cedb8875ce4d', `# branch.head ${head}`]
+  if (upstream !== null) lines.push(`# branch.upstream ${upstream}`, `# branch.ab +${ahead} -${behind}`)
+  for (let i = 0; i < changed; i += 1) lines.push(`1 .M N... 100644 100644 100644 aaaa bbbb file${i}.ts`)
+  return `${lines.join('\n')}\n`
+}
