@@ -148,3 +148,16 @@ test('a branch with no upstream counts its commits not on any remote', async ($,
   await start($, world)
   expect(callsOf(world, 'git rev-list --count HEAD --not --remotes').map(call => call.cwd)).toEqual([PATHS.riggit])
 })
+
+test('git runs without optional locks, fetch skips auto gc, and nothing can prompt', async ($, on) => {
+  const world = stage(on)
+  await start($, world)
+  await $.command.run(slash('repos'))
+  await world.clock.settle()
+  const quiet = (call: { env: Record<string, string> | undefined }) =>
+    call.env?.GIT_OPTIONAL_LOCKS === '0' && call.env?.GIT_SSH_COMMAND === 'ssh -o BatchMode=yes' && call.env?.GIT_TERMINAL_PROMPT === '0'
+  expect(callsOf(world, 'git status').every(quiet)).toBe(true)
+  const fetches = callsOf(world, 'git fetch')
+  expect(fetches.length).toBeGreaterThan(0)
+  expect(fetches.every(call => call.argv === 'git fetch --quiet --no-auto-gc' && quiet(call))).toBe(true)
+})
